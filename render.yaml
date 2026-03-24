@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: zentra-landing
+    env: static
+    staticPublishPath: site
+    pullRequestPreviewsEnabled: true
