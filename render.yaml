@@ -1,6 +1,11 @@
 services:
   - type: web
-    name: zentra-landing
+    name: zentra
     env: static
+    plan: free
     staticPublishPath: site
     pullRequestPreviewsEnabled: true
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
