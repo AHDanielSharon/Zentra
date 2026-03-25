@@ -18,6 +18,7 @@ The deployed app is a static voice-assistant web app under `site/index.html`.
 
 - Always listening in browser (where supported).
 - Wake word: **Hey Zentra**.
+- Direct command mode also works (example: `open whatsapp` without wake word).
 - Then command:
   - `open google`
   - `open whatsapp`
@@ -25,6 +26,11 @@ The deployed app is a static voice-assistant web app under `site/index.html`.
   - `open settings` (browser-safe message shown)
 - Shows status + what was heard.
 - Gives short voice responses.
+
+### Important limitation (web mode)
+
+- Browser mode cannot open apps when this page is closed or running in background tabs due to browser security rules.
+- For true system-wide, screen-off/background app opening, use the Android app build in `app/` (foreground service mode).
 
 > Best experience: latest Chrome with microphone permission enabled.
 

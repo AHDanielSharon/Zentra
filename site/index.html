@@ -42,12 +42,12 @@
 <body>
   <main class="card">
     <h1>ZENTRA</h1>
-    <p class="muted">Hands-free wake word assistant (web mode): say <code>Hey Zentra</code> then a command.</p>
+    <p class="muted">Hands-free wake word assistant (web mode): say <code>Hey Zentra</code> then a command. Direct command mode is also enabled.</p>
     <div class="status" id="status">Status: starting...</div>
     <div class="heard" id="heard">Heard: -</div>
     <div class="msg" id="message">Message: -</div>
     <p class="hint">Commands: <code>open google</code>, <code>open whatsapp</code>, <code>open youtube</code>, <code>open settings</code>.</p>
-    <p class="warning" id="warning"></p>
+    <p class="warning" id="warning">Note: Opening apps while this page is closed/backgrounded requires the Android app mode.</p>
   </main>
 
   <script>
@@ -75,19 +75,25 @@
 
     function executeCommand(text) {
       if (text.includes('open google') || text.includes('open chrome')) {
-        window.open('https://www.google.com', '_blank', 'noopener');
+        window.location.assign('https://www.google.com');
         setMessage('Opening Google');
         speak('Opening Google');
         return true;
       }
       if (text.includes('open whatsapp')) {
-        window.open('https://web.whatsapp.com', '_blank', 'noopener');
-        setMessage('Opening WhatsApp Web');
+        const isAndroid = /android/i.test(navigator.userAgent);
+        if (isAndroid) {
+          window.location.assign('intent://send/#Intent;scheme=whatsapp;package=com.whatsapp;end');
+          setMessage('Opening WhatsApp');
+        } else {
+          window.location.assign('https://web.whatsapp.com');
+          setMessage('Opening WhatsApp Web');
+        }
         speak('Opening WhatsApp');
         return true;
       }
       if (text.includes('open youtube')) {
-        window.open('https://www.youtube.com', '_blank', 'noopener');
+        window.location.assign('https://www.youtube.com');
         setMessage('Opening YouTube');
         speak('Opening YouTube');
         return true;
@@ -106,6 +112,14 @@
       setHeard(text);
 
       if (!wakeDetected) {
+        if (text.startsWith('open ')) {
+          if (!executeCommand(text)) {
+            setMessage('Command not recognized');
+          }
+          setStatus('listening for wake word');
+          return;
+        }
+
         if (text.includes('hey zentra')) {
           wakeDetected = true;
           setStatus('wake word detected, listening for command');
