@@ -11,6 +11,8 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.IBinder
 import android.provider.Settings
+import android.os.Handler
+import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
@@ -23,6 +25,8 @@ class ZentraVoiceService : Service(), RecognitionListener, TextToSpeech.OnInitLi
     private var speechRecognizer: SpeechRecognizer? = null
     private var tts: TextToSpeech? = null
     private var wakeWordDetected = false
+    private var isListening = false
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     override fun onCreate() {
         super.onCreate()
@@ -38,6 +42,7 @@ class ZentraVoiceService : Service(), RecognitionListener, TextToSpeech.OnInitLi
     }
 
     override fun onDestroy() {
+        mainHandler.removeCallbacksAndMessages(null)
         speechRecognizer?.destroy()
         tts?.shutdown()
         super.onDestroy()
@@ -64,6 +69,7 @@ class ZentraVoiceService : Service(), RecognitionListener, TextToSpeech.OnInitLi
 
     private fun startListening() {
         val recognizer = speechRecognizer ?: return
+        if (isListening) return
         VoiceStateStore.updateStatus(if (wakeWordDetected) "Listening for command" else "Listening for wake word")
 
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
@@ -74,15 +80,22 @@ class ZentraVoiceService : Service(), RecognitionListener, TextToSpeech.OnInitLi
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
         }
 
-        recognizer.startListening(intent)
+        try {
+            recognizer.startListening(intent)
+            isListening = true
+        } catch (_: Exception) {
+            isListening = false
+            scheduleRestart()
+        }
     }
 
     override fun onResults(results: android.os.Bundle?) {
+        isListening = false
         val matches = results
             ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
             .orEmpty()
         handleRecognized(matches)
-        restartListening()
+        scheduleRestart()
     }
 
     override fun onPartialResults(partialResults: android.os.Bundle?) {
@@ -107,6 +120,14 @@ class ZentraVoiceService : Service(), RecognitionListener, TextToSpeech.OnInitLi
                 VoiceStateStore.updateMessage("Yes, I'm listening")
                 speak("I'm listening")
                 updateNotification("Wake word detected. Waiting for command")
+
+                val immediateCommand = text.substringAfter("hey zentra", "").trim()
+                if (immediateCommand.isNotEmpty()) {
+                    val outcome = executeCommand(immediateCommand)
+                    VoiceStateStore.updateMessage(outcome)
+                    wakeWordDetected = false
+                    updateNotification("Listening for wake word")
+                }
             }
             return
         }
@@ -177,9 +198,15 @@ class ZentraVoiceService : Service(), RecognitionListener, TextToSpeech.OnInitLi
         tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "zentra_tts")
     }
 
-    private fun restartListening() {
-        speechRecognizer?.cancel()
-        startListening()
+    private fun scheduleRestart(delayMs: Long = 350) {
+        mainHandler.postDelayed(
+            {
+                isListening = false
+                speechRecognizer?.cancel()
+                startListening()
+            },
+            delayMs
+        )
     }
 
     private fun createNotificationChannel() {
@@ -218,15 +245,18 @@ class ZentraVoiceService : Service(), RecognitionListener, TextToSpeech.OnInitLi
     }
 
     override fun onError(error: Int) {
+        isListening = false
         VoiceStateStore.updateStatus("Listening...")
-        restartListening()
+        scheduleRestart(550)
     }
 
     override fun onReadyForSpeech(params: android.os.Bundle?) = Unit
     override fun onBeginningOfSpeech() = Unit
     override fun onRmsChanged(rmsdB: Float) = Unit
     override fun onBufferReceived(buffer: ByteArray?) = Unit
-    override fun onEndOfSpeech() = Unit
+    override fun onEndOfSpeech() {
+        isListening = false
+    }
     override fun onEvent(eventType: Int, params: android.os.Bundle?) = Unit
 
     companion object {
