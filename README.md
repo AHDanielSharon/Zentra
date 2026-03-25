@@ -14,6 +14,12 @@ Or manually:
 
 The deployed app is a static voice-assistant web app under `site/index.html`.
 
+### Install as app (PWA)
+
+- Open deployed URL in Chrome.
+- Click **Install ZENTRA App** button shown on the page.
+- If button is hidden, open browser menu and choose **Install app** / **Add to Home screen**.
+
 ## Web app behavior (works on deployed Render URL)
 
 - Always listening in browser (where supported).

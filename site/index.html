@@ -4,6 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ZENTRA - Voice Assistant</title>
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <meta name="theme-color" content="#0f1117" />
   <style>
     :root {
       color-scheme: dark;
@@ -37,6 +39,17 @@
     .hint { margin-top: 14px; font-size: 0.95rem; color: #cfd5e4; }
     code { background: #262b3a; padding: 2px 6px; border-radius: 6px; }
     .warning { color: var(--warn); margin-top: 16px; }
+    .actions { margin-top: 16px; display: flex; gap: 10px; }
+    .btn {
+      background: #2f5dff;
+      color: white;
+      border: 0;
+      border-radius: 10px;
+      padding: 10px 14px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .btn[hidden] { display: none; }
   </style>
 </head>
 <body>
@@ -46,6 +59,9 @@
     <div class="status" id="status">Status: starting...</div>
     <div class="heard" id="heard">Heard: -</div>
     <div class="msg" id="message">Message: -</div>
+    <div class="actions">
+      <button id="installBtn" class="btn" hidden>Install ZENTRA App</button>
+    </div>
     <p class="hint">Commands: <code>open google</code>, <code>open whatsapp</code>, <code>open youtube</code>, <code>open settings</code>.</p>
     <p class="warning" id="warning">Note: Opening apps while this page is closed/backgrounded requires the Android app mode.</p>
   </main>
@@ -55,12 +71,14 @@
     const heardEl = document.getElementById('heard');
     const msgEl = document.getElementById('message');
     const warningEl = document.getElementById('warning');
+    const installBtn = document.getElementById('installBtn');
 
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     const synth = window.speechSynthesis;
 
     let wakeDetected = false;
     let recognition;
+    let deferredInstallPrompt = null;
 
     function setStatus(v) { statusEl.textContent = `Status: ${v}`; }
     function setHeard(v) { heardEl.textContent = `Heard: ${v || '-'}`; }
@@ -179,6 +197,30 @@
       } catch (_) {
         setStatus('tap reload and allow microphone permission');
       }
+    }
+
+    window.addEventListener('beforeinstallprompt', (event) => {
+      event.preventDefault();
+      deferredInstallPrompt = event;
+      installBtn.hidden = false;
+    });
+
+    installBtn.addEventListener('click', async () => {
+      if (!deferredInstallPrompt) {
+        setMessage('Install option not available yet. Use browser menu > Install app.');
+        return;
+      }
+
+      deferredInstallPrompt.prompt();
+      await deferredInstallPrompt.userChoice;
+      deferredInstallPrompt = null;
+      installBtn.hidden = true;
+    });
+
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {
+        warningEl.textContent = 'Could not register offline app worker.';
+      });
     }
 
     startRecognition();
