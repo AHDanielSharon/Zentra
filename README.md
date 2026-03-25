@@ -32,6 +32,12 @@ The deployed app is a static voice-assistant web app under `site/index.html`.
 - Browser mode cannot open apps when this page is closed or running in background tabs due to browser security rules.
 - For true system-wide, screen-off/background app opening, use the Android app build in `app/` (foreground service mode).
 
+## Android mode capabilities
+
+- Supports specific commands (`open whatsapp`, `open youtube`, etc.) and generic command style: `open <app name>`.
+- Service is configured to restart on boot/package update and attempts recovery if app task is removed.
+- If user **force stops** the app from Android Settings, Android blocks restart until the user manually opens the app again.
+
 > Best experience: latest Chrome with microphone permission enabled.
 
 ---

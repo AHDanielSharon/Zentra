@@ -5,9 +5,11 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.app.AlarmManager
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.pm.ResolveInfo
 import android.os.Build
 import android.os.IBinder
 import android.provider.Settings
@@ -39,6 +41,19 @@ class ZentraVoiceService : Service(), RecognitionListener, TextToSpeech.OnInitLi
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startListening()
         return START_STICKY
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        val restartIntent = Intent(applicationContext, ZentraVoiceService::class.java)
+        val restartPendingIntent = PendingIntent.getService(
+            this,
+            44,
+            restartIntent,
+            PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val alarmManager = getSystemService(AlarmManager::class.java)
+        alarmManager.setExact(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + 1500, restartPendingIntent)
+        super.onTaskRemoved(rootIntent)
     }
 
     override fun onDestroy() {
@@ -153,6 +168,10 @@ class ZentraVoiceService : Service(), RecognitionListener, TextToSpeech.OnInitLi
                 openSettings()
                 "Opening Settings"
             }
+            text.startsWith("open ") -> {
+                val appName = text.removePrefix("open ").trim()
+                openAnyAppByName(appName)
+            }
             else -> {
                 speak("Sorry, command not recognized")
                 "Command not recognized"
@@ -191,6 +210,49 @@ class ZentraVoiceService : Service(), RecognitionListener, TextToSpeech.OnInitLi
             val msg = "Unable to open $appLabel"
             speak(msg)
             msg
+        }
+    }
+
+    private fun openAnyAppByName(query: String): String {
+        if (query.isBlank()) {
+            return "Please say an app name"
+        }
+
+        val launchables = getLaunchableApps()
+        val exact = launchables.firstOrNull { (_, label) -> label.equals(query, ignoreCase = true) }
+        val partial = launchables.firstOrNull { (_, label) -> label.contains(query, ignoreCase = true) }
+        val match = exact ?: partial
+
+        return if (match != null) {
+            val packageName = match.first
+            val label = match.second
+            val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+            if (launchIntent != null) {
+                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                startActivity(launchIntent)
+                val msg = "Opening $label"
+                speak(msg)
+                msg
+            } else {
+                val msg = "$label is installed but cannot be opened"
+                speak(msg)
+                msg
+            }
+        } else {
+            val msg = "I could not find app $query"
+            speak(msg)
+            msg
+        }
+    }
+
+    private fun getLaunchableApps(): List<Pair<String, String>> {
+        val intent = Intent(Intent.ACTION_MAIN).apply {
+            addCategory(Intent.CATEGORY_LAUNCHER)
+        }
+
+        val matches: List<ResolveInfo> = packageManager.queryIntentActivities(intent, 0)
+        return matches.map {
+            it.activityInfo.packageName to it.loadLabel(packageManager).toString()
         }
     }
 
