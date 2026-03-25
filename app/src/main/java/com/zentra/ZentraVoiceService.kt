@@ -14,6 +14,7 @@ import android.os.Build
 import android.os.IBinder
 import android.provider.Settings
 import android.provider.MediaStore
+import android.os.PowerManager
 import android.os.Handler
 import android.os.Looper
 import android.speech.RecognitionListener
@@ -30,11 +31,13 @@ class ZentraVoiceService : Service(), RecognitionListener, TextToSpeech.OnInitLi
     private var wakeWordDetected = false
     private var isListening = false
     private val mainHandler = Handler(Looper.getMainLooper())
+    private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildNotification("Listening for wake word"))
+        acquireWakeLock()
         tts = TextToSpeech(this, this)
         setupSpeechRecognizer()
     }
@@ -59,6 +62,7 @@ class ZentraVoiceService : Service(), RecognitionListener, TextToSpeech.OnInitLi
 
     override fun onDestroy() {
         mainHandler.removeCallbacksAndMessages(null)
+        wakeLock?.let { if (it.isHeld) it.release() }
         speechRecognizer?.destroy()
         tts?.shutdown()
         super.onDestroy()
@@ -332,6 +336,13 @@ class ZentraVoiceService : Service(), RecognitionListener, TextToSpeech.OnInitLi
             val manager = getSystemService(NotificationManager::class.java)
             manager.createNotificationChannel(channel)
         }
+    }
+
+    private fun acquireWakeLock() {
+        val pm = getSystemService(PowerManager::class.java)
+        wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "zentra:voice_lock")
+        wakeLock?.setReferenceCounted(false)
+        wakeLock?.acquire()
     }
 
     private fun buildNotification(content: String): Notification {
