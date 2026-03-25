@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ZENTRA - Voice Assistant</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0f1117;
+      --card: #191c26;
+      --accent: #7b8cff;
+      --ok: #66d9a3;
+      --warn: #ffd166;
+    }
+    body {
+      margin: 0;
+      font-family: Inter, Arial, sans-serif;
+      background: radial-gradient(circle at top, #1b2040, var(--bg));
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 20px;
+    }
+    .card {
+      width: min(720px, 100%);
+      background: rgba(25, 28, 38, 0.95);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 18px;
+      padding: 24px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.35);
+    }
+    h1 { margin: 0; letter-spacing: 0.08em; }
+    .muted { color: #aab0c2; }
+    .status { margin-top: 14px; font-weight: 600; color: var(--ok); }
+    .heard, .msg { margin-top: 10px; padding: 12px; border-radius: 10px; background: #10131b; }
+    .hint { margin-top: 14px; font-size: 0.95rem; color: #cfd5e4; }
+    code { background: #262b3a; padding: 2px 6px; border-radius: 6px; }
+    .warning { color: var(--warn); margin-top: 16px; }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>ZENTRA</h1>
+    <p class="muted">Hands-free wake word assistant (web mode): say <code>Hey Zentra</code> then a command. Direct command mode is also enabled.</p>
+    <div class="status" id="status">Status: starting...</div>
+    <div class="heard" id="heard">Heard: -</div>
+    <div class="msg" id="message">Message: -</div>
+    <p class="hint">Commands: <code>open google</code>, <code>open whatsapp</code>, <code>open youtube</code>, <code>open settings</code>.</p>
+    <p class="warning" id="warning">Note: Opening apps while this page is closed/backgrounded requires the Android app mode.</p>
+  </main>
+
+  <script>
+    const statusEl = document.getElementById('status');
+    const heardEl = document.getElementById('heard');
+    const msgEl = document.getElementById('message');
+    const warningEl = document.getElementById('warning');
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const synth = window.speechSynthesis;
+
+    let wakeDetected = false;
+    let recognition;
+
+    function setStatus(v) { statusEl.textContent = `Status: ${v}`; }
+    function setHeard(v) { heardEl.textContent = `Heard: ${v || '-'}`; }
+    function setMessage(v) { msgEl.textContent = `Message: ${v || '-'}`; }
+
+    function speak(text) {
+      if (!synth) return;
+      const utterance = new SpeechSynthesisUtterance(text);
+      synth.cancel();
+      synth.speak(utterance);
+    }
+
+    function executeCommand(text) {
+      if (text.includes('open google') || text.includes('open chrome')) {
+        window.location.assign('https://www.google.com');
+        setMessage('Opening Google');
+        speak('Opening Google');
+        return true;
+      }
+      if (text.includes('open whatsapp')) {
+        const isAndroid = /android/i.test(navigator.userAgent);
+        if (isAndroid) {
+          window.location.assign('intent://send/#Intent;scheme=whatsapp;package=com.whatsapp;end');
+          setMessage('Opening WhatsApp');
+        } else {
+          window.location.assign('https://web.whatsapp.com');
+          setMessage('Opening WhatsApp Web');
+        }
+        speak('Opening WhatsApp');
+        return true;
+      }
+      if (text.includes('open youtube')) {
+        window.location.assign('https://www.youtube.com');
+        setMessage('Opening YouTube');
+        speak('Opening YouTube');
+        return true;
+      }
+      if (text.includes('open settings')) {
+        setMessage('Browser security prevents opening phone settings from web.');
+        speak('Settings cannot be opened from web mode');
+        return true;
+      }
+      return false;
+    }
+
+    function processText(raw) {
+      const text = (raw || '').toLowerCase().trim();
+      if (!text) return;
+      setHeard(text);
+
+      if (!wakeDetected) {
+        if (text.startsWith('open ')) {
+          if (!executeCommand(text)) {
+            setMessage('Command not recognized');
+          }
+          setStatus('listening for wake word');
+          return;
+        }
+
+        if (text.includes('hey zentra')) {
+          wakeDetected = true;
+          setStatus('wake word detected, listening for command');
+          setMessage("I'm listening");
+          speak("I'm listening");
+          const immediate = text.split('hey zentra')[1]?.trim();
+          if (immediate && executeCommand(immediate)) {
+            wakeDetected = false;
+            setStatus('listening for wake word');
+          }
+        }
+        return;
+      }
+
+      if (!executeCommand(text)) {
+        setMessage('Command not recognized');
+        speak('Sorry, command not recognized');
+      }
+      wakeDetected = false;
+      setStatus('listening for wake word');
+    }
+
+    function startRecognition() {
+      if (!SpeechRecognition) {
+        warningEl.textContent = 'Speech recognition is not supported in this browser. Use latest Chrome on Android/Desktop.';
+        setStatus('unsupported browser');
+        return;
+      }
+
+      recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+
+      recognition.onstart = () => setStatus(wakeDetected ? 'listening for command' : 'listening for wake word');
+      recognition.onresult = (event) => {
+        let transcript = '';
+        for (let i = event.resultIndex; i < event.results.length; i += 1) {
+          transcript += event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            processText(event.results[i][0].transcript);
+          }
+        }
+        if (transcript) setHeard(transcript.toLowerCase());
+      };
+      recognition.onerror = () => {
+        setStatus('restarting listener...');
+      };
+      recognition.onend = () => {
+        setTimeout(() => {
+          try { recognition.start(); } catch (_) {}
+        }, 350);
+      };
+
+      try {
+        recognition.start();
+      } catch (_) {
+        setStatus('tap reload and allow microphone permission');
+      }
+    }
+
+    startRecognition();
+  </script>
+</body>
+</html>
