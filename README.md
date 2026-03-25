@@ -41,6 +41,7 @@ The deployed app is a static voice-assistant web app under `site/index.html`.
 ## Android mode capabilities
 
 - Supports specific commands (`open whatsapp`, `open youtube`, etc.) and generic command style: `open <app name>`.
+- Direct command works without wake word too in Android mode (for example: `open camera`).
 - Service is configured to restart on boot/package update and attempts recovery if app task is removed.
 - If user **force stops** the app from Android Settings, Android blocks restart until the user manually opens the app again.
 

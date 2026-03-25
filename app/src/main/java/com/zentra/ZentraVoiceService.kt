@@ -13,6 +13,7 @@ import android.content.pm.ResolveInfo
 import android.os.Build
 import android.os.IBinder
 import android.provider.Settings
+import android.provider.MediaStore
 import android.os.Handler
 import android.os.Looper
 import android.speech.RecognitionListener
@@ -128,6 +129,13 @@ class ZentraVoiceService : Service(), RecognitionListener, TextToSpeech.OnInitLi
         val text = matches.first().lowercase(Locale.US).trim()
         VoiceStateStore.updateHeard(text)
 
+        if (!wakeWordDetected && text.startsWith("open ")) {
+            val outcome = executeCommand(text)
+            VoiceStateStore.updateMessage(outcome)
+            updateNotification("Listening for wake word")
+            return
+        }
+
         if (!wakeWordDetected) {
             if (text.contains("hey zentra")) {
                 wakeWordDetected = true
@@ -154,28 +162,47 @@ class ZentraVoiceService : Service(), RecognitionListener, TextToSpeech.OnInitLi
     }
 
     private fun executeCommand(text: String): String {
+        val normalized = normalizeOpenCommand(text)
+
         return when {
-            text.contains("open google") || text.contains("open chrome") -> {
+            normalized.contains("open google") || normalized.contains("open chrome") -> {
                 openPackage("com.android.chrome", "Google Chrome")
             }
-            text.contains("open whatsapp") -> {
+            normalized.contains("open whatsapp") -> {
                 openPackage("com.whatsapp", "WhatsApp")
             }
-            text.contains("open youtube") -> {
+            normalized.contains("open youtube") -> {
                 openPackage("com.google.android.youtube", "YouTube")
             }
-            text.contains("open settings") -> {
+            normalized.contains("open camera") -> {
+                openCamera()
+            }
+            normalized.contains("open settings") -> {
                 openSettings()
                 "Opening Settings"
             }
-            text.startsWith("open ") -> {
-                val appName = text.removePrefix("open ").trim()
+            normalized.startsWith("open ") -> {
+                val appName = normalized.removePrefix("open ").trim()
                 openAnyAppByName(appName)
             }
             else -> {
                 speak("Sorry, command not recognized")
                 "Command not recognized"
             }
+        }
+    }
+
+    private fun openCamera(): String {
+        return try {
+            val intent = Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(intent)
+            val msg = "Opening Camera"
+            speak(msg)
+            msg
+        } catch (_: Exception) {
+            openAnyAppByName("camera")
         }
     }
 
@@ -219,9 +246,17 @@ class ZentraVoiceService : Service(), RecognitionListener, TextToSpeech.OnInitLi
         }
 
         val launchables = getLaunchableApps()
-        val exact = launchables.firstOrNull { (_, label) -> label.equals(query, ignoreCase = true) }
-        val partial = launchables.firstOrNull { (_, label) -> label.contains(query, ignoreCase = true) }
-        val match = exact ?: partial
+        val normalizedQuery = query.replace(" app", "").trim()
+
+        val exact = launchables.firstOrNull { (_, label) -> label.equals(normalizedQuery, ignoreCase = true) }
+        val partial = launchables.firstOrNull { (_, label) -> label.contains(normalizedQuery, ignoreCase = true) }
+        val fuzzy = launchables
+            .map { it to tokenMatchScore(normalizedQuery, it.second) }
+            .filter { it.second > 0 }
+            .maxByOrNull { it.second }
+            ?.first
+
+        val match = exact ?: partial ?: fuzzy
 
         return if (match != null) {
             val packageName = match.first
@@ -239,10 +274,26 @@ class ZentraVoiceService : Service(), RecognitionListener, TextToSpeech.OnInitLi
                 msg
             }
         } else {
-            val msg = "I could not find app $query"
+            val msg = "I could not find app $normalizedQuery"
             speak(msg)
             msg
         }
+    }
+
+    private fun normalizeOpenCommand(text: String): String {
+        return text
+            .replace("please", "")
+            .replace("could you", "")
+            .replace("for me", "")
+            .replace("the ", "")
+            .trim()
+    }
+
+    private fun tokenMatchScore(query: String, label: String): Int {
+        val queryTokens = query.lowercase(Locale.US).split(" ").filter { it.isNotBlank() }
+        val labelTokens = label.lowercase(Locale.US).split(" ").filter { it.isNotBlank() }
+        if (queryTokens.isEmpty() || labelTokens.isEmpty()) return 0
+        return queryTokens.count { q -> labelTokens.any { it.startsWith(q) || it.contains(q) } }
     }
 
     private fun getLaunchableApps(): List<Pair<String, String>> {
